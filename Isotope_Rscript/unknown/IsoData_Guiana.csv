@@ -1,0 +1,4 @@
+ID,d2h,d2h_err,d2H_mean,d2H_SD,d18O,d18O_err,d18O_mean,d18O_SD,Genus,Species,vect2,COI_project,Date_collected,Locality_data,State_Province,Country,Elevation,lat,long,wing_vouchers,Testis_extracted,Genitalia_code,Comments,Sr,Sr_err
+RVcoll14M973,-87,3.13,,,21.8,0.4,,,Vanessa,cardui,,,13-Oct,Les Hattes,,French Guiana,,5.745964,-53.933431,,,,PW-108,0.710134,0.000012
+RVcoll14M974,-83,3.18,,,23,0.41,,,Vanessa,cardui,,,13-Oct,Les Hattes,,French Guiana,,5.745964,-53.933431,,,,PW-109,0.710843,0.000010
+RVcoll14M975,-84,3.18,,,23.5,0.41,,,Vanessa,cardui,,,13-Oct,Les Hattes,,French Guiana,,5.745964,-53.933431,,,,PW-110,0.711208,0.000017
