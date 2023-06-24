@@ -29,3 +29,9 @@ Demultiplexed and adapter-trimmed RAD-sequencing reads are available in the Euro
 Allele output of the ipyrad analysis (`vcardui.alleles`) is processed in fineRADstructure using commands provided in `Population_genetics/fineRADstructure_script.sh`. Please note that for the R script provided by the fineRADstructure to plot the results the samples must be renamed to follow "Country+number" format (eg. Spain1, Spain2, etc.).
 
 The VCF file form ipyrad (`vcardui.vcf.gz`) is filtered using vcftools and used to run PCA in PLINK with the `Population_genetics/PCA_script.sh`.
+
+## Wind trajectory analyses
+
+The scripts for the wind trajectory calculations can be found in the `Hysplit_wind_analysis` folder. The script `Hysplit_Guyane_winds_21-31_daily.R` was used to generate the daily trajectory plots and the altitudinal profile, whereas the script `Hysplit_Guyane_winds_20-30_two-day_alt_profile.R` can be used to generate the two-day plots.
+
+To ensure proper functioning of the scripts, use of `R 4.1.2`, as well as following [these installation instructions](https://github.com/etd530/Hysplit_R_interface), is recommended.
