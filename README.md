@@ -32,6 +32,6 @@ The VCF file form ipyrad (`vcardui.vcf.gz`) is filtered using vcftools and used 
 
 ## Wind trajectory analyses
 
-The scripts for the wind trajectory calculations can be found in the `Hysplit_wind_analysis` folder. The script `Hysplit_Guyane_winds_21-31_daily.R` was used to generate the daily trajectory plots and the altitudinal profile, whereas the script `Hysplit_Guyane_winds_20-30_two-day_alt_profile.R` can be used to generate the two-day plots.
+The scripts for the wind trajectory calculations can be found in the `Hysplit_wind_analysis` folder. The script `guyane_wind_trajectories-one-day_blocks.sh` was used to generate the daily trajectory plots, whereas the script `guyane_wind_trajectories_two-day_blocks.sh` can be used to generate the two-day plots. To run these scripts, you will need to follow [these installation instructions](https://github.com/etd530/Hysplit_R_interface); as well as use [GNU Parallel](https://www.gnu.org/software/parallel/) (this is optional, but the scripts need to be slightly modified not to use it).
 
-To ensure proper functioning of the scripts, use of `R 4.1.2`, as well as following [these installation instructions](https://github.com/etd530/Hysplit_R_interface), is recommended.
+After obtaining the trajectory calculations (`.RData` files), the scripts `wind_speed_plots.R` and `mean_speed_per_traj.R` can be used to obtain the figures and table on wind speed and mean trajectory speeds, respectively. Lastly, `Rdata_to_shp.R` and `get_intersection_hours.R` can be used to obtain the table containing times to intersect the African coastline and the proportion of trajectories that intersect it. This step requires a shapefile available in the Source Data of the article.
