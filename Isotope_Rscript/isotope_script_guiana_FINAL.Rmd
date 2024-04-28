@@ -1,0 +1,794 @@
+---
+title: "Guiana 2023"
+author: "Megan Reich"
+date: "08/02/2022"
+output: 
+  html_document:
+    theme: paper
+    toc: true
+    toc_float: true
+---
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Purpose
+Code for the isotope-based geographic assignment section of:  
+Suchan, T., Bataille, C.P., Reich, M.S., Toro-Delgado, E. Vila, R., Pierce, N.E., Talavera, G. (2024). A trans-oceanic flight of over 4,200 km by painted lady butterflies. Nature Communications.  
+  
+  
+Isotope-based geographic assignment using hydrogen and strontium isotopes of 3 painted ladies captured in French Guiana by Gerard Talavera in October 2013. The hydrogen isotope values were measured in Utah by IsoForensics in June 2017. The strontium isotope ratios were measured at UBC by Megan Reich in December 2021.
+
+# Setup
+```{r message=FALSE, warning=FALSE}
+# packages
+if(!require(osfr)) install.packages("osfr"); library(osfr)
+if (!require(tidyverse)) install.packages(tidyverse); library(tidyverse)
+if (!require(terra)) install.packages(terra); library(terra)
+if (!require(assignR)) install.packages(assignR); library(assignR)
+if (!require(rnaturalearth)) install.packages(rnaturalearth); library(rnaturalearth)
+if (!require(viridis)) install.packages(viridis); library(viridis)
+if (!require(lattice)) install.packages(lattice); library(lattice)
+if (!require(unikn)) install.packages(unikn); library(unikn)
+if (!require(ggpubr)) install.packages(ggpubr); library(ggpubr)
+if (!require(tidyterra)) install.packages(tidyterra); library(tidyterra)
+if (!require(sf)) install.packages(sf); library(sf)
+```
+```{r}
+#make folders in home directory
+dir.create("output")
+dir.create("output/H")
+dir.create("output/H_Sr")
+dir.create("output/Sr")
+dir.create("isoscapes")
+```
+# samples
+```{r}
+###Guiana isotope data
+iso.data <- read.csv("unknown/IsoData_Guiana.csv") # tissue isotope data
+```
+```{r message=FALSE, warning=FALSE}
+# projections
+WGS84 <- "+init=epsg:4326"
+eckert<-"+proj=eck4 +lon_0=0 +x_0=0 +y_0=0 +ellps=WGS84 +units=m +no_defs"
+
+## define study extent 
+box<-c(xmin=-10470815, ymin=-1314163, xmax= 4682185,  ymax=8259837) 
+### Create a country shapefile
+extent1<-ne_countries(returnclass = "sf")
+extent1<-sf::st_transform(extent1,crs=eckert)
+extent1 <- sf::st_buffer(extent1, dist=0)
+extent3 <- sf::st_crop(x=extent1, y=box)
+sf::st_write(obj = extent3, dsn = "isoscapes/extent3.shp", delete_dsn = TRUE)
+```
+The unknown origin data was measured in Utah (IsoForensics Inc) and is on Magozzi et al (2021) reference code: UT_H_2
+```{r}
+#add ref scale
+iso.data$d2H_cal<-"UT_H_2"
+#dataframe as required
+samples<-iso.data %>%
+  dplyr::select(c(d2H = d2h,d2H.sd = d2h_err,d2H_cal))
+#transform to VSMOW
+sample_trans<-assignR::refTrans(samples=samples, marker="d2H", ref_scale = "VSMOW_H")
+```
+```{r}
+print(cbind(iso.data[,1:3], sample_trans$data))
+```
+# Isoscapes
+## Strontium isoscape - part 1
+```{r}
+# Download Bataille et al 2020 Global bioavailable 87Sr/86Sr isoscapes from the Open Science Foundation
+#OSF repo
+sr_rasters <- osf_retrieve_node("pwdvn")
+osf_ls_files(sr_rasters)
+
+sr_rasters %>%
+  osf_ls_files(path ="Stontium isoscape/", pattern = ".tif")%>%
+  osf_download(path="./isoscapes/")
+```
+
+```{r eval=FALSE, warning=FALSE}
+###load isoscapes Sr and uncertainty from Bataille et al 2020
+rf_sr<-rast("isoscapes/rf_plantsoilmammal1.tif")
+rf_sr_err <-rast("isoscapes/srse.tif")
+
+###Crop Sr isoscape to study area
+Sr_mean <- terra::crop(rf_sr, extent3)
+Sr_sd <- terra::crop(rf_sr_err, extent3)
+```
+
+continued below
+
+## Hydrogen isoscape
+### precipitation isoscape
+```{r eval=FALSE, warning=FALSE}
+###get Global mean-annual precipitation H and O isotope values
+d2h_world<-assignR::getIsoscapes(isoType = "GlobalPrecipMA", timeout = 1200)
+d2h_world<-subset(d2h_world,1:2)
+```
+Format: GeoTIFF
+Spatial extent: Global land surface
+Spatial resolution: 5' x 5'
+Temporal extent: Climatological, monthly or annual average (preciptation amount-weighted)
+Projection: WGS84 unprojected
+Layers:
+*d2h_MA: Mean predicted annual-average d2H values
+*d2h_se_MA: Standard error of the mean predicted annual-average d2H values
+*d2h_01...: Mean predicted monthly d2H values for January (01) through December (12)
+*d2h_se_01...: Standard error of the mean predicted monthly d2H values for January (01) through December (12)
+*d18o_MA: Mean predicted annual-average d18O values
+*d18o_se_MA: Standard error of the mean predicted annual-average d18O values
+*d18o_01...: Mean predicted monthly d18O values for January (01) through December (12)
+*d18o_se_01...: Standard error of the mean predicted monthly d18O values for January (01) through December (12)
+Source: Bowen, G. J., & Revenaugh, J. (2003). Interpolating the isotopic composition of modern meteoric precipitation. Water resources research, 39(10). 
+Source: Bowen, G. J., Wassenaar, L. I., & Hobson, K. A. (2005). Global application of stable hydrogen and oxygen isotopes to wildlife forensics. Oecologia, 143(3), 337-348.
+
+### calibration data
+#### Hobson et al 2019
+```{r}
+# Get calibration data
+#Hobson 2019
+caldata<-assignR::subOrigData(marker="d2H", taxon="Danaus plexippus", ref_scale="VSMOW_H") #ref_scale:	character string. Text identifier for reference scale to which all isotope values will be transformed. 
+caldata
+#Result: 150 samples from 31 sites Hobseon et al 2019
+```
+#### Ghouri et al 2023
+```{r}
+caldata_Ghouri<-read.csv("isoscapes/knownorigin_butterfly_2023_final_v8.csv",fileEncoding="UTF-8-BOM")
+caldata_Ghouri2<-subset(caldata_Ghouri, select=c("d2H.average","d2H.sd","Lon", "Lat"))
+
+# no meaningful difference (~0.02 per mil) with reftrans correction so used original values
+caltrans<-caldata_Ghouri2 %>%
+  dplyr::select(c(d2H = d2H.average,d2H.sd = d2H.sd))
+caltrans$d2H_cal<-"EC_H_9"
+#transform to VSMOW
+caltrans2<-refTrans(samples=caltrans, marker="d2H", ref_scale = "VSMOW_H")
+print(cbind(caltrans,caltrans2$data))
+```
+```{r}
+# if the site fall within an empty cell (usually near the coast), function to move the coordinates of the sampling site to the nearest non-NA cell 
+nearest_non_na <- function(coordinates, raster) {
+  # Convert the coordinates data.frame to an sf points object
+  points <- st_as_sf(coordinates, coords = c("Lon", "Lat"), crs = st_crs(raster))
+  
+  # Extract raster values under the points
+  values <- terra::extract(raster, points,method="simple")
+  
+  for(i in which(is.na(values[2]))){    #if a value is NA, move it
+      point <- points[i,]
+      # Distance does not work when the crs is "". needs an exception
+      distRaster <- terra::distance(raster, point)
+      distRaster <- terra::mask(distRaster, raster)
+      vmin <- terra::where.min(distRaster)
+      coordinates[i,3:4] = terra::xyFromCell(distRaster, vmin[2])
+    }
+  
+  return(coordinates)
+}
+```
+```{r}
+caldata_Ghouri3 <- nearest_non_na(caldata_Ghouri2, d2h_world[[1]])
+```
+#### Combine
+```{r}
+Hobson<-as.data.frame(caldata$data)
+Hobson_xy <- as.data.frame(geom(caldata$data))
+Hobson <- cbind(Hobson, Hobson_xy)
+Hobson<-Hobson %>%
+  dplyr::select(d2H, d2H.sd, x, y)
+Hobson$set<-"Hobson"
+```
+```{r}
+Ghouri<-caldata_Ghouri3 %>%
+  dplyr::select(d2H.average,d2H.sd,Lon,Lat)%>%
+  rename(d2H =d2H.average, x = Lon, y =Lat)
+Ghouri$set<-"Ghouri"
+```
+```{r}
+Cal <- rbind(Hobson, Ghouri)
+
+#terra
+Cal_HobGho<-vect(Cal, geom =c("x", "y"))
+crs(Cal_HobGho) <- WGS84
+```
+
+### calibrate H isoscape
+
+```{r}
+#calibrate isoscape
+d2Hw_HobGho<-calRaster(known=Cal_HobGho, isoscape=d2h_world, interpMethod = 2, outDir="isoscapes")
+
+###Reproject H isoscape to Sr isoscape
+d2Hw_HobGho_p<-terra::project(x = d2Hw_HobGho$isoscape.rescale, y= Sr_mean,method="bilinear", align=T)
+
+###Cut wing H isoscape to same extent as Sr isoscape
+d2Hw_HobGho_p<-crop(d2Hw_HobGho_p,Sr_mean)
+d2Hw_HobGho_p<-mask(d2Hw_HobGho_p, Sr_mean)
+
+#save
+writeRaster(d2Hw_HobGho_p[[1]], "isoscapes/d2Hw_mean_HobGho.tif", overwrite=T)
+writeRaster(d2Hw_HobGho_p[[2]], "isoscapes/d2Hw_sd_HobGho.tif", overwrite=T)
+```
+```{r}
+#bring in final H isoscape
+d2Hw_mean_HobGho<-rast("isoscapes/d2Hw_mean_HobGho.tif")
+d2Hw_sd_HobGho<-rast("isoscapes/d2Hw_sd_HobGho.tif")
+d2Hw_HobGho_p<-c(d2Hw_mean_HobGho,d2Hw_sd_HobGho)
+```
+
+## Strontium isoscape - part 2
+```{r}
+###Cut wing Sr isoscape to same extent as H isoscape
+Sr_mean<-crop(Sr_mean,d2Hw_HobGho_p[[1]]) #hydrogen
+Sr_mean<-terra::mask(Sr_mean, d2Hw_HobGho_p[[1]])
+Sr_sd<-crop(Sr_sd,d2Hw_HobGho_p[[1]]) #hydrogen
+Sr_sd2<-mask(Sr_sd, d2Hw_HobGho_p[[1]])
+
+#save
+writeRaster(Sr_mean, "isoscapes/Sr_Bataille2020_mean_V2.tif", overwrite=T)
+writeRaster(Sr_sd, "isoscapes/Sr_Bataille2020_sd_V2.tif", overwrite=T)
+```
+```{r}
+#bring in final Sr isoscape
+Sr_mean <- rast("isoscapes/Sr_Bataille2020_mean_V2.tif")
+Sr_sd <- rast("isoscapes/Sr_Bataille2020_sd_V2.tif")
+###Create stack for assignR
+Sr_stack<-c(Sr_mean,Sr_sd)
+```
+
+# d2H assignment
+```{r}
+H_postps<-assignR::pdRaster(d2Hw_HobGho_p, unknown = sample_trans, outDir = "output/H/")
+
+#joint
+joint_H<-assignR::jointP(H_postps)
+writeRaster(joint_H, "output/H/Joint_H.tif")
+```
+```{r}
+H_973<-rast("output/H/1_like.tif")
+H_974<-rast("output/H/2_like.tif")
+H_975<-rast("output/H/3_like.tif")
+joint_H<-rast("output/H/Joint_H.tif")
+```
+## graticules and locations
+```{r}
+grat <- sf::st_graticule(lon=seq(-160,90, 40),
+                      lat = seq(0,80, 20),
+                      ndiscr = 5000) %>%
+  vect() %>%
+  project(eckert) 
+```
+```{r}
+# capture location
+indxy <- sf::st_as_sf(iso.data, coords = c("long", "lat"), crs=WGS84) #WGS84
+indxy <- sf::st_transform(indxy, crs = eckert)
+```
+## plot
+```{r}
+H_973 <- terra::setMinMax(H_973, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(H_973)
+Uniques.max <-Uniques["max","lyr.1"]
+Uniques.min <-Uniques["min","lyr.1"]
+#try a ggplot
+H_973_plot <- ggplot()+
+   geom_spatraster(data = H_973) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+  labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=H_973_plot, filename="output/H/H_973_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+H_974 <- terra::setMinMax(H_974, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(H_974)
+Uniques.max <-Uniques["max","lyr.1"]
+Uniques.min <-Uniques["min","lyr.1"]
+#try a ggplot
+H_974_plot <- ggplot()+
+   geom_spatraster(data = H_974) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=H_974_plot, filename="output/H/H_974_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+H_975 <- terra::setMinMax(H_975, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(H_975)
+Uniques.max <-Uniques["max","lyr.1"]
+Uniques.min <-Uniques["min","lyr.1"]
+#try a ggplot
+H_975_plot <- ggplot()+
+   geom_spatraster(data = H_975) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=H_975_plot, filename="output/H/H_975_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+joint_H <- terra::setMinMax(joint_H, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(joint_H)
+Uniques.max <-Uniques["max","Joint_Probability"]
+Uniques.min <-Uniques["min","Joint_Probability"]
+#try a ggplot
+joint_H_plot <- ggplot()+
+   geom_spatraster(data = joint_H) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Joint probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=joint_H_plot, filename="output/H/joint_H_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+
+# 87Sr/86Sr assignment
+```{r eval=FALSE}
+###dataset prepared for assignR
+iso.data_Sr<-subset(iso.data, select=c("ID","Sr","Sr_err"))
+```
+```{r eval=FALSE}
+###pd Sr
+Sr_pd<-assignR::pdRaster(Sr_stack, unknown = iso.data_Sr, outDir = "output/Sr/")
+```
+```{r eval=FALSE}
+###Joint Sr prob
+Joint_Sr<-assignR::jointP(Sr_pd)
+writeRaster(Joint_Sr, "output/Sr/Joint_Sr.tif")
+```
+```{r eval=FALSE, warning=FALSE}
+Sr_973<-rast("output/Sr/RVcoll14M973_like.tif")
+Sr_974<-rast("output/Sr/RVcoll14M974_like.tif")
+Sr_975<-rast("output/Sr/RVcoll14M975_like.tif")
+Joint_Sr<-rast("output/Sr/Joint_Sr.tif")
+```
+```{r}
+Sr_973 <- terra::setMinMax(Sr_973, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(Sr_973)
+Uniques.max <-Uniques["max","rf_plantsoilmammal1"]
+Uniques.min <-Uniques["min","rf_plantsoilmammal1"]
+#try a ggplot
+Sr_973_plot <- ggplot()+
+   geom_spatraster(data = Sr_973) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=Sr_973_plot, filename="output/Sr/Sr_973_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+Sr_974 <- terra::setMinMax(Sr_974, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(Sr_974)
+Uniques.max <-Uniques["max","rf_plantsoilmammal1"]
+Uniques.min <-Uniques["min","rf_plantsoilmammal1"]
+#try a ggplot
+Sr_974_plot <- ggplot()+
+   geom_spatraster(data = Sr_974) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=Sr_974_plot, filename="output/Sr/Sr_974_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+Sr_975 <- terra::setMinMax(Sr_975, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(Sr_975)
+Uniques.max <-Uniques["max","rf_plantsoilmammal1"]
+Uniques.min <-Uniques["min","rf_plantsoilmammal1"]
+#try a ggplot
+Sr_975_plot <- ggplot()+
+   geom_spatraster(data = Sr_975) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=Sr_975_plot, filename="output/Sr/Sr_975_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+Joint_Sr <- terra::setMinMax(Joint_Sr, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(Joint_Sr)
+Uniques.max <-Uniques["max","Joint_Probability"]
+Uniques.min <-Uniques["min","Joint_Probability"]
+#try a ggplot
+Joint_Sr_plot <- ggplot()+
+   geom_spatraster(data = Joint_Sr) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Joint probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=Joint_Sr_plot, filename="output/Sr/Joint_Sr_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+
+# dual d2H - 87Sr/86Sr assignment
+```{r}
+###prepare dataset for dual assignment in assignR
+iso.data<-cbind(iso.data, sample_trans$data)
+iso.data_dual<-subset(iso.data, select=c("ID","d2H","Sr"))
+iso.data_dual
+```
+```{r}
+#put the data together
+dual_hobgho_stack<-isoStack(d2Hw_HobGho_p,Sr_stack)
+```
+```{r}
+dual_pd <- assignR::pdRaster(dual_hobgho_stack, unknown = iso.data_dual, genplot = F, outDir = "output/H_Sr/")
+```
+```{r}
+joint_d<-assignR::jointP(dual_pd)
+writeRaster(joint_d, "output/H_Sr/joint_d.tif")
+```
+```{r}
+d_973<-rast("output/H_Sr/RVcoll14M973_like.tif")
+d_974<-rast("output/H_Sr/RVcoll14M974_like.tif")
+d_975<-rast("output/H_Sr/RVcoll14M975_like.tif")
+joint_d<-rast("output/H_Sr/joint_d.tif")
+```
+```{r}
+d_973 <- terra::setMinMax(d_973, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(d_973)
+Uniques.max <-Uniques["max","rf_plantsoilmammal1"]
+Uniques.min <-Uniques["min","rf_plantsoilmammal1"]
+#try a ggplot
+d_973_plot <- ggplot()+
+   geom_spatraster(data = d_973) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=d_973_plot, filename="output/H_Sr/d_973_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+d_974 <- terra::setMinMax(d_974, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(d_974)
+Uniques.max <-Uniques["max","rf_plantsoilmammal1"]
+Uniques.min <-Uniques["min","rf_plantsoilmammal1"]
+#try a ggplot
+d_974_plot <- ggplot()+
+   geom_spatraster(data = d_974) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=d_974_plot, filename="output/H_Sr/d_974_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+d_975 <- terra::setMinMax(d_975, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(d_975)
+Uniques.max <-Uniques["max","rf_plantsoilmammal1"]
+Uniques.min <-Uniques["min","rf_plantsoilmammal1"]
+#try a ggplot
+d_975_plot <- ggplot()+
+   geom_spatraster(data = d_975) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=d_975_plot, filename="output/H_Sr/d_975_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+joint_d <- terra::setMinMax(joint_d, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(joint_d)
+Uniques.max <-Uniques["max","Joint_Probability"]
+Uniques.min <-Uniques["min","Joint_Probability"]
+#try a ggplot
+joint_d_plot <- ggplot()+
+   geom_spatraster(data = joint_d) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_scientific(digits =2)) +
+   labs(fill= "Joint probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=joint_d_plot, filename="output/H_Sr/joint_d_plot.png", device="png", height=4, width=8, units="in",bg="white")
+```
+```{r}
+#normalized
+joint_d <- terra::setMinMax(joint_d, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(joint_d)
+Uniques.max <-Uniques["max","Joint_Probability"]
+joint_d_n <- joint_d/Uniques.max
+writeRaster(joint_d_n, "output/H_Sr/joint_d_plot_n.tif")
+#try a ggplot
+joint_d_n_plot <- ggplot()+
+   geom_spatraster(data = joint_d_n) +
+   scale_fill_gradient2(limits = c(0, 1), low = "#F2F2F2",mid= "#21908CFF", high = "#FDE725FF", midpoint=.5, na.value = NA, breaks = seq(0, 1, length.out = 5), labels = scales::number_format(accuracy=.1)) +
+   labs(fill= "Joint probability")+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_sf(data=indxy, color="red", pch=1, cex=.9)+
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=joint_d_n_plot, filename="output/H_Sr/joint_d_plot_n.png", device="png", height=4, width=8, units="in",bg="white")
+```
+
+# Additional figures
+## Isoscapes
+```{r}
+d2Hw_mean_HobGho <- terra::setMinMax(d2Hw_mean_HobGho, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(d2Hw_mean_HobGho)
+Uniques.max <-Uniques["max","lyr.1"]
+Uniques.min <-Uniques["min","lyr.1"]
+#try a ggplot
+d2Hw_mean_HobGho_plot <- ggplot()+
+   geom_spatraster(data = d2Hw_mean_HobGho) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#440154FF",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_number(accuracy =1)) +
+   labs(fill= expression(paste(delta^{2},"H ", "(\u2030)")))+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=d2Hw_mean_HobGho_plot, filename="isoscapes/d2Hw_mean_HobGho_plot.png", device="png", height=4, width=8, units="in",bg="white")      
+```
+```{r}
+d2Hw_sd_HobGho <- terra::setMinMax(d2Hw_sd_HobGho, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(d2Hw_sd_HobGho)
+Uniques.max <-Uniques["max","lyr.2"]
+Uniques.min <-Uniques["min","lyr.2"]
+#try a ggplot
+d2Hw_sd_HobGho_plot <- ggplot()+
+   geom_spatraster(data = d2Hw_sd_HobGho) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#0D0887FF",mid= "#CC4678FF", high = "#F0F921FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_number(accuracy =1)) +
+   labs(fill= expression(paste(delta^{2},"H ", "(\u2030)")))+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=d2Hw_sd_HobGho_plot, filename="isoscapes/d2Hw_sd_HobGho_plot.png", device="png", height=4, width=8, units="in",bg="white")      
+```
+Sr_mean,Sr_sd)
+```{r}
+Sr_mean <- terra::setMinMax(Sr_mean, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(Sr_mean)
+Uniques.max <-Uniques["max","rf_plantsoilmammal1"]
+Uniques.min <-Uniques["min","rf_plantsoilmammal1"]
+#try a ggplot
+Sr_mean_plot <- ggplot()+
+   geom_spatraster(data = Sr_mean) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#440154FF",mid= "#21908CFF", high = "#FDE725FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_number(accuracy =.0001)) +
+   labs(fill= expression(paste(~''^{87},"Sr/",~''^{86},"Sr")))+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=Sr_mean_plot, filename="isoscapes/Sr_mean_plot.png", device="png", height=4, width=8, units="in",bg="white")      
+```
+```{r}
+Sr_sd <- terra::setMinMax(Sr_sd, force =T) #omg it doesnt auto display the actual min and max
+Uniques<-terra::minmax(Sr_sd)
+Uniques.max <-Uniques["max","srse"]
+Uniques.min <-Uniques["min","srse"]
+#try a ggplot
+Sr_sd_plot <- ggplot()+
+   geom_spatraster(data = Sr_sd) +
+   scale_fill_gradient2(limits = c(Uniques.min, Uniques.max), low = "#0D0887FF",mid= "#CC4678FF", high = "#F0F921FF", midpoint=mean(c(Uniques.max,Uniques.min)),
+    na.value = NA, breaks = seq(Uniques.min, Uniques.max, length.out = 5), labels = scales::label_number(accuracy =.0001)) +
+   labs(fill= expression(paste(~''^{87},"Sr/",~''^{86},"Sr")))+
+   geom_sf(data=extent3,color="grey30",fill="transparent", lwd=0.3)+ #countries
+   geom_spatvector(data=grat, color=alpha("grey60", 0.5)) +
+   coord_sf(xlim = c(-10470815, 4682185),ylim = c(-1314163, 8259837), expand=F)+
+   scale_x_continuous(breaks = seq(-160, 70, by = 40)) +
+   scale_y_continuous(breaks = seq(0, 80, by = 20))+
+   theme_minimal()+
+   theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+         legend.margin=margin(0,0,.2,0),
+         plot.background = element_rect(fill=NA, color=NA),
+         panel.border=element_rect(fill=NA, color="grey30"),
+         legend.background = element_rect(fill = NA, color=NA),
+         legend.key.height = unit(1, "cm"),
+         axis.title.x = element_blank(), 
+     axis.title.y = element_blank())
+ggsave(plot=Sr_sd_plot, filename="isoscapes/Sr_sd_plot.png", device="png", height=4, width=8, units="in",bg="white")      
+```
+
+# fin
+```{r}
+sessionInfo()
+```
+
