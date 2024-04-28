@@ -35,3 +35,7 @@ The VCF file form ipyrad (`vcardui.vcf.gz`) is filtered using vcftools and used 
 The scripts for the wind trajectory calculations can be found in the `Hysplit_wind_analysis` folder. The script `guyane_wind_trajectories-one-day_blocks.sh` was used to generate the daily trajectory plots, whereas the script `guyane_wind_trajectories_two-day_blocks.sh` can be used to generate the two-day plots. To run these scripts, you will need to install [this GitHub repository](https://github.com/etd530/Hysplit_R_interface) as well as [GNU Parallel](https://www.gnu.org/software/parallel/) (the latter is optional, but the scripts need to be slightly modified to be ran without it).
 
 After obtaining the trajectory calculations (`.RData` files), the scripts `wind_speed_plots.R` and `mean_speed_per_traj.R` can be used to obtain the figures and table on wind speed and mean trajectory speeds, respectively. Lastly, `Rdata_to_shp.R` and `get_intersection_hours.R` can be used to obtain the table containing times to intersect the African coastline and the proportion of trajectories that intersect it. This step requires a shapefile available in the Source Data of the article.
+
+## Isotope-based geographic assignment
+
+The R markdown file, `isotope_script_guiana_FINAL`, that contains the script for the isotope-based geographic assignment can be found in the `Isotope_Rscript` folder. 
